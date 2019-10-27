@@ -1,9 +1,9 @@
 //! An analysis to determine which locals require allocas and
 //! which do not.
 
-use rustc_data_structures::bit_set::BitSet;
+use rustc_index::bit_set::BitSet;
 use rustc_data_structures::graph::dominators::Dominators;
-use rustc_data_structures::indexed_vec::{Idx, IndexVec};
+use rustc_index::vec::{Idx, IndexVec};
 use rustc::mir::{self, Location, TerminatorKind};
 use rustc::mir::visit::{Visitor, PlaceContext, MutatingUseContext, NonMutatingUseContext};
 use rustc::mir::traversal;
@@ -191,10 +191,7 @@ impl<'mir, 'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> Visitor<'tcx>
                     location: Location) {
         debug!("visit_assign(place={:?}, rvalue={:?})", place, rvalue);
 
-        if let mir::Place {
-            base: mir::PlaceBase::Local(index),
-            projection: box [],
-        } = *place {
+        if let Some(index) = place.as_local() {
             self.assign(index, location);
             let decl_span = self.fx.mir.local_decls[index].source_info.span;
             if !self.fx.rvalue_creates_operand(rvalue, decl_span) {

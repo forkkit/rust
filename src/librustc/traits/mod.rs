@@ -188,6 +188,9 @@ pub enum ObligationCauseCode<'tcx> {
     /// Obligation incurred due to an object cast.
     ObjectCastObligation(/* Object type */ Ty<'tcx>),
 
+    /// Obligation incurred due to a coercion.
+    Coercion { source: Ty<'tcx>, target: Ty<'tcx> },
+
     // Various cases where expressions must be sized/copy/etc:
     /// L = X implies that L is Sized
     AssignmentLhsSized,
@@ -268,6 +271,8 @@ pub enum ObligationCauseCode<'tcx> {
 
     /// #[feature(trivial_bounds)] is not enabled
     TrivialBound,
+
+    AssocTypeBound(/*impl*/ Option<Span>, /*original*/ Span),
 }
 
 // `ObligationCauseCode` is used a lot. Make sure it doesn't unintentionally get bigger.
@@ -610,7 +615,7 @@ pub struct VtableImplData<'tcx, N> {
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, HashStable)]
 pub struct VtableGeneratorData<'tcx, N> {
     pub generator_def_id: DefId,
-    pub substs: ty::GeneratorSubsts<'tcx>,
+    pub substs: SubstsRef<'tcx>,
     /// Nested obligations. This can be non-empty if the generator
     /// signature contains associated types.
     pub nested: Vec<N>
@@ -619,7 +624,7 @@ pub struct VtableGeneratorData<'tcx, N> {
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, HashStable)]
 pub struct VtableClosureData<'tcx, N> {
     pub closure_def_id: DefId,
-    pub substs: ty::ClosureSubsts<'tcx>,
+    pub substs: SubstsRef<'tcx>,
     /// Nested obligations. This can be non-empty if the closure
     /// signature contains associated types.
     pub nested: Vec<N>

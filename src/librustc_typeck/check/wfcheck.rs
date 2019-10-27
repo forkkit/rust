@@ -172,6 +172,18 @@ pub fn check_trait_item(tcx: TyCtxt<'_>, def_id: DefId) {
         _ => None
     };
     check_associated_item(tcx, trait_item.hir_id, trait_item.span, method_sig);
+
+    // Prohibits applying `#[track_caller]` to trait decls
+    for attr in &trait_item.attrs {
+        if attr.check_name(sym::track_caller) {
+            struct_span_err!(
+                tcx.sess,
+                attr.span,
+                E0738,
+                "`#[track_caller]` is not supported in trait declarations."
+            ).emit();
+        }
+    }
 }
 
 pub fn check_impl_item(tcx: TyCtxt<'_>, def_id: DefId) {
@@ -182,6 +194,30 @@ pub fn check_impl_item(tcx: TyCtxt<'_>, def_id: DefId) {
         hir::ImplItemKind::Method(ref sig, _) => Some(sig),
         _ => None
     };
+
+    // Prohibits applying `#[track_caller]` to trait impls
+    if method_sig.is_some() {
+        let track_caller_attr = impl_item.attrs.iter()
+            .find(|a| a.check_name(sym::track_caller));
+        if let Some(tc_attr) = track_caller_attr {
+            let parent_hir_id = tcx.hir().get_parent_item(hir_id);
+            let containing_item = tcx.hir().expect_item(parent_hir_id);
+            let containing_impl_is_for_trait = match &containing_item.kind {
+                hir::ItemKind::Impl(_, _, _, _, tr, _, _) => tr.is_some(),
+                _ => bug!("parent of an ImplItem must be an Impl"),
+            };
+
+            if containing_impl_is_for_trait {
+                struct_span_err!(
+                    tcx.sess,
+                    tc_attr.span,
+                    E0738,
+                    "`#[track_caller]` is not supported in traits yet."
+                ).emit();
+            }
+        }
+    }
+
     check_associated_item(tcx, impl_item.hir_id, impl_item.span, method_sig);
 }
 
@@ -394,7 +430,7 @@ fn check_item_type(
 
 fn check_impl<'tcx>(
     tcx: TyCtxt<'tcx>,
-    item: &hir::Item,
+    item: &'tcx hir::Item,
     ast_self_ty: &hir::Ty,
     ast_trait_ref: &Option<hir::TraitRef>,
 ) {
@@ -409,15 +445,18 @@ fn check_impl<'tcx>(
                 // therefore don't need to be WF (the trait's `Self: Trait` predicate
                 // won't hold).
                 let trait_ref = fcx.tcx.impl_trait_ref(item_def_id).unwrap();
-                let trait_ref =
-                    fcx.normalize_associated_types_in(
-                        ast_trait_ref.path.span, &trait_ref);
-                let obligations =
-                    ty::wf::trait_obligations(fcx,
-                                              fcx.param_env,
-                                              fcx.body_id,
-                                              &trait_ref,
-                                              ast_trait_ref.path.span);
+                let trait_ref = fcx.normalize_associated_types_in(
+                    ast_trait_ref.path.span,
+                    &trait_ref,
+                );
+                let obligations = ty::wf::trait_obligations(
+                    fcx,
+                    fcx.param_env,
+                    fcx.body_id,
+                    &trait_ref,
+                    ast_trait_ref.path.span,
+                    Some(item),
+                );
                 for obligation in obligations {
                     fcx.register_predicate(obligation);
                 }
@@ -755,7 +794,7 @@ fn check_opaque_types<'fcx, 'tcx>(
                         "check_opaque_types: may define, predicates={:#?}",
                         predicates,
                     );
-                    for &(pred, _) in predicates.predicates.iter() {
+                    for &(pred, _) in predicates.predicates {
                         let substituted_pred = pred.subst(fcx.tcx, substs);
                         // Avoid duplication of predicates that contain no parameters, for example.
                         if !predicates.predicates.iter().any(|&(p, _)| p == substituted_pred) {
@@ -975,7 +1014,7 @@ fn check_variances_for_type_defn<'tcx>(
 
     identify_constrained_generic_params(
         tcx,
-        &ty_predicates,
+        ty_predicates,
         None,
         &mut constrained_parameters,
     );
@@ -999,11 +1038,16 @@ fn report_bivariance(tcx: TyCtxt<'_>, span: Span, param_name: ast::Name) {
 
     let suggested_marker_id = tcx.lang_items().phantom_data();
     // Help is available only in presence of lang items.
-    if let Some(def_id) = suggested_marker_id {
-        err.help(&format!("consider removing `{}` or using a marker such as `{}`",
-                          param_name,
-                          tcx.def_path_str(def_id)));
-    }
+    let msg = if let Some(def_id) = suggested_marker_id {
+        format!(
+            "consider removing `{}`, referring to it in a field, or using a marker such as `{}`",
+            param_name,
+            tcx.def_path_str(def_id),
+        )
+    } else {
+        format!( "consider removing `{}` or referring to it in a field", param_name)
+    };
+    err.help(&msg);
     err.emit();
 }
 

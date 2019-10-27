@@ -26,6 +26,7 @@ LL |     Alias::Unit();
    |     ^^^^^^^^^^^--
    |     |
    |     call expression requires function
+   |
 help: `<Alias>::Unit` is a unit variant, you need to write it without the parenthesis
    |
 LL |     <Alias>::Unit;
@@ -39,5 +40,5 @@ LL |     let Alias::Unit() = panic!();
 
 error: aborting due to 5 previous errors
 
-Some errors have detailed explanations: E0164, E0618.
+Some errors have detailed explanations: E0164, E0533, E0618.
 For more information about an error, try `rustc --explain E0164`.
